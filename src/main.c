@@ -9,7 +9,9 @@ struct header {
     uint32_t n_commands;
     uint32_t size_commands;
     uint32_t flags;
+    uint32_t reserved;
 };
+
 
 struct macho_file {
     // https://stackoverflow.com/questions/44579663/mach-o-magic-and-cigam-clarification
@@ -17,14 +19,11 @@ struct macho_file {
     uint8_t is_universal;
     uint8_t should_swap;
     struct header* header;
+    struct load_command** load_commands;
     int position;
     int file_size;
     FILE* stream;
 };
-
-int get_int(struct macho_file *macho, uint8_t* buffer) {
-    return fread(buffer, sizeof(int), 1, macho->stream);
-}
 
 int determine_type(struct macho_file *macho) {
 
@@ -45,8 +44,35 @@ int determine_type(struct macho_file *macho) {
     return 0;
 }
 
+int get_uint32(struct macho_file *macho, uint32_t* buffer) {
+    return fread(buffer, sizeof(uint32_t), 1, macho->stream);
+}
+
+
+int get_header(struct macho_file *macho) {
+    fread(macho->header, sizeof(struct header)- sizeof(uint32_t) , 1, macho->stream);
+    determine_type(macho);
+
+    if (macho->is_64bit) {
+        get_uint32(macho, &macho->header->reserved);
+        // fread(&macho->header->reserved, sizeof(uint32_t), 1, macho->stream);
+    }
+
+}
+
+int get_commands(struct macho_file *macho) {
+
+    for (int i = 0; i < macho->header->n_commands; i++) {
+        macho->load_commands[i] = malloc(sizeof(struct load_command));
+        get_uint32(macho, &macho->load_commands[i]->cmd);
+        get_uint32(macho, &macho->load_commands[i]->cmdsize);
+        fseek(macho->stream, macho->load_commands[i]->cmdsize-(sizeof(uint32_t) * 2), SEEK_CUR);
+    }
+}
+
+
 int open_file(struct macho_file *macho) {
-    macho->stream = fopen("../examples/macho1", "rb");
+    macho->stream = fopen("/home/jacob/malware/macho/macho1", "rb");
 
     fseek(macho->stream, 0L, SEEK_END);    // seek to the EOF
     macho->file_size = ftell(macho->stream);       // get the current position
@@ -61,38 +87,23 @@ int main(int argc, char **argv) {
     // initialize things
     struct macho_file *macho = malloc(sizeof(struct macho_file));
     macho->header = malloc(sizeof(struct header));
-    
     open_file(macho);
-    uint8_t* buffer = malloc(sizeof(uint8_t)*4);
+    get_header(macho);
+    macho->load_commands = (struct load_command**) malloc(sizeof(struct command *) * macho->header->n_commands);
+    get_commands(macho);
 
-    // get magic bytes
-    get_int(macho, buffer);
-    memcpy(&macho->header->magic, buffer, sizeof(uint32_t));
+    printf("Magic: %x\n", macho->header->magic);
+    printf("CPU Type: %x\n", macho->header->cpu_type);
+    printf("CPU Subtype: %x\n", macho->header->cpu_subtype);
+    printf("# of Commands: %x\n", macho->header->n_commands);
+    printf("Size of Commands: %d\n", (int) macho->header->size_commands);
 
-    free(buffer);
-
-    // cpu type
-    buffer = malloc(sizeof(cpu_type_t));
-    get_int(macho, buffer);
-    memcpy(&macho->header->cpu_type, buffer, sizeof(cpu_type_t));
-    free(buffer);
-
-    buffer = malloc(sizeof(cpu_subtype_t));
-    get_int(macho, buffer);
-    memcpy(&macho->header->cpu_subtype, buffer, sizeof(cpu_subtype_t));
-    free(buffer);
-
-    for (int i = 0; i < 4; i++) {
-        printf("Data read from file: %x \n", buffer[i]);
+    for (int i = 0; i < macho->header->n_commands; i++) {
+        printf("Command: %x\n", macho->load_commands[i]->cmd);
+        printf("Command Size: %x\n", macho->load_commands[i]->cmdsize);
     }
 
-    determine_type(macho);
-    printf("%x\n", macho->header->magic);
-    printf("%x\n", macho->header->cpu_type);
-    printf("%x\n", macho->header->cpu_subtype);
-
-
-    printf("Swap? %d\n64 bit? %d\nFat? %d\n", macho->should_swap, macho->is_64bit, macho->is_universal);
+    printf("Swap: %d\n64 bit: %d\nFat: %d\n", macho->should_swap, macho->is_64bit, macho->is_universal);
     printf("File Size: %d\n", macho->file_size);
     fclose(macho->stream);
 
