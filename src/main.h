@@ -143,6 +143,16 @@ struct dylib_command {
 	struct dylib	dylib;		/* the library identification */
 };
 
+/*
+ * The rpath_command contains a path which at runtime should be added to
+ * the current run path used to find @rpath prefixed dylibs.
+ */
+struct rpath_command {
+    uint32_t	 cmd;		/* LC_RPATH */
+    uint32_t	 cmdsize;	/* includes string */
+    union lc_str path;		/* path to add to run path */
+};
+
 // static struct _load_command_types load_command_types[] = {
 //   { CPU_TYPE_I386, "i386" },
 //   { CPU_TYPE_X86_64, "x86_64" },

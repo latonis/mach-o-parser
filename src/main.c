@@ -1,5 +1,4 @@
 #include "main.h"
-#include <string.h>
 
 struct header {
     uint32_t magic;
@@ -31,9 +30,9 @@ struct macho_file {
     void*   header;
     void**  load_commands;
     uint32_t n_dylibs;
-    struct dylib**  dylibs;
+    struct dylib_command**  dylibs;
     uint32_t n_rpaths;
-    // struct rpath**
+    struct rpath_command** rpaths;
 };
 
 int determine_type(struct macho_file *macho) {
@@ -70,6 +69,35 @@ uint8_t* get_header(uint8_t* input, struct macho_file *macho) {
     }
 }
 
+uint8_t* process_load_commands(uint8_t* input, struct macho_file* macho) {
+    struct header* header = (struct header*) macho->header;
+
+    macho->dylibs = malloc(sizeof(struct dylib_command*) * macho->n_dylibs);
+    macho->rpaths = malloc(sizeof(struct rpath_command*) * macho->n_rpaths);
+
+    uint32_t dylib_c = 0;
+    uint32_t rpath_c = 0;
+    for (int i = 0; i < header->n_commands; i++) {
+        macho->load_commands[i] = (struct load_command*) input;
+        struct load_command* lc = macho->load_commands[i];
+        switch (lc->cmd) {
+            case LC_RPATH:
+                macho->rpaths[rpath_c++] = (struct rpath_command*) lc;
+                break;
+            case LC_ID_DYLIB:
+            case LC_LOAD_DYLIB:
+            case LC_LOAD_WEAK_DYLIB:
+            case LC_REEXPORT_DYLIB:
+                macho->dylibs[dylib_c++] = (struct dylib_command*) lc;
+                break;
+            default:
+                break;
+        }
+        input = (uint8_t*) (input + (lc->cmdsize));
+    }
+
+    return input;
+}
 
 uint8_t* get_load_commands(uint8_t* input, struct macho_file* macho) {
     struct header* header = (struct header*) macho->header;
@@ -113,11 +141,23 @@ int print_stats(struct macho_file* macho) {
 int print_load_commands(struct macho_file* macho) {
     struct header* header = (struct header*) macho->header;
 
+    printf("\n=== Unprocessed Load Commands ===\n");
     for (int i = 0; i < header->n_commands; i++) {
-        printf("cmd: %x\ncmdsize: %x\n", ((struct load_command*) macho->load_commands[i])->cmd, ((struct load_command*) macho->load_commands[i])->cmdsize); 
+        struct load_command* lc = (struct load_command*) macho->load_commands[i];
+        printf("cmd: %x\ncmdsize: %x\n", lc->cmd, lc->cmdsize); 
     }
+    printf("\n");
 
-    printf("Number of Dylibs: %u", (int) macho->n_dylibs);
+
+    printf("=== Dylibs ===\n");
+    for (int i = 0; i < macho->n_dylibs; i++) {
+        struct dylib_command* dc = macho->dylibs[i];
+        char* name_ptr = (char*) dc + dc->dylib.name.offset;
+        printf("Name: %s\nTimestamp: %u\nCurrent Version: %u\nCompatibility Version: %u\n\n", name_ptr, dc->dylib.timestamp, dc->dylib.current_version, dc->dylib.compatibility_version);
+    }
+    printf("\n");
+    printf("Number of Dylibs: %d\n", (int) macho->n_dylibs);
+    printf("Number of RPaths: %d\n", (int) macho->n_rpaths);
 
     return 0;
 }
@@ -166,9 +206,8 @@ int main(int argc, char **argv) {
 
     input = get_header(input, macho);
     determine_type(macho);
-
-    input = get_load_commands(input, macho);
-
+    get_load_commands(input, macho);
+    input = process_load_commands(input, macho);
     print_stats(macho);
     print_load_commands(macho);
 
