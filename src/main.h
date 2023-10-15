@@ -121,3 +121,31 @@ struct load_command {
 #define LC_DATA_IN_CODE 0x29 /* table of non-instructions in __text */
 #define LC_SOURCE_VERSION 0x2A /* source version used to build binary */
 #define LC_DYLIB_CODE_SIGN_DRS 0x2B /* Code signing DRs copied from linked dylibs */
+
+union lc_str {
+	uint32_t	offset;	/* offset to the string */
+#ifndef __LP64__
+	char		*ptr;	/* pointer to the string */
+#endif 
+};
+
+struct dylib {
+    union lc_str  name;			/* library's path name */
+    uint32_t timestamp;			/* library's build time stamp */
+    uint32_t current_version;		/* library's current version number */
+    uint32_t compatibility_version;	/* library's compatibility vers number*/
+};
+
+struct dylib_command {
+	uint32_t	cmd;		/* LC_ID_DYLIB, LC_LOAD_{,WEAK_}DYLIB,
+					   LC_REEXPORT_DYLIB */
+	uint32_t	cmdsize;	/* includes pathname string */
+	struct dylib	dylib;		/* the library identification */
+};
+
+// static struct _load_command_types load_command_types[] = {
+//   { CPU_TYPE_I386, "i386" },
+//   { CPU_TYPE_X86_64, "x86_64" },
+//   { CPU_TYPE_ARM, "arm" },
+//   { CPU_TYPE_ARM64, "arm64" }
+// };
